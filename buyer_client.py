@@ -18,16 +18,54 @@ import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
-URL = os.environ.get("LANIAKEA_URL", "https://laniakea-protocol-production.up.railway.app").rstrip("/")
+URL = os.environ.get("LANIAKEA_URL", "http://127.0.0.1:8000").rstrip("/")
 AGENT_ID = os.environ.get("LANIAKEA_AGENT_ID", "buyer_epsilon")
 TASK = os.environ.get("LANIAKEA_TASK", "copywriting")
 SELLER = os.environ.get("LANIAKEA_SELLER", "")
 BRIEF = os.environ.get("LANIAKEA_BRIEF", "one paragraph, any topic")
 FEEDBACK = "Trouble or feedback? https://forms.gle/LBGb4jvgH88aK2Qf7"
+TERMINAL = ("released_to_seller", "refunded_to_buyer")
 
 
 def canonical(payload: dict) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def confirm(url: str, tx_id: str, *, timeout: float = 20) -> dict:
+    """Read current escrow + conservation. A POST receipt is not settlement."""
+    tr = httpx.get(f"{url}/transaction/{tx_id}", timeout=timeout)
+    cons_r = httpx.get(f"{url}/conservation", timeout=timeout)
+    cons = cons_r.json() if cons_r.status_code == 200 else {}
+    conserved = bool(cons.get("conserved"))
+    if tr.status_code != 200:
+        return {
+            "transaction_id": tx_id,
+            "escrow_state": None,
+            "conserved": conserved,
+            "settled": False,
+            "unknown": True,
+            "http": tr.status_code,
+        }
+    st = tr.json()
+    state = (st.get("escrow") or {}).get("state")
+    return {
+        "transaction_id": tx_id,
+        "escrow_state": state,
+        "conserved": conserved,
+        "settled": state in TERMINAL and conserved,
+        "unknown": False,
+        "http": 200,
+        "transaction": st,
+        "conservation": cons,
+    }
+
+
+def handshake_tx_id(response_json: dict, local_id: str) -> str:
+    """Authoritative id is the 200 body. Local request id is a hint only."""
+    remote = (response_json or {}).get("transaction_id")
+    if not remote:
+        raise ValueError("handshake 200 missing transaction_id")
+    return remote
 
 
 def main() -> None:
@@ -66,9 +104,9 @@ def main() -> None:
         raise SystemExit(f"no listed seller for {TASK}. start seller_client.py first.")
 
     print(f"hiring {seller_id} cost={cost}")
-    tx_id = "tx_" + uuid.uuid4().hex[:12]
+    local_id = "tx_" + uuid.uuid4().hex
     hs = {
-        "transaction_id": tx_id,
+        "transaction_id": local_id,
         "buyer_agent_id": AGENT_ID,
         "seller_agent_id": seller_id,
         "action_type": "task",
@@ -81,22 +119,37 @@ def main() -> None:
     }
     signed = {k: v for k, v in hs.items() if k not in ("signature", "status", "escrow_state")}
     hs["signature"] = sign(signed)
-    posted = httpx.post(f"{URL}/handshake", json=hs, timeout=20)
-    posted.raise_for_status()
-    print(f"held {posted.json()}")
+    try:
+        posted = httpx.post(f"{URL}/handshake", json=hs, timeout=20)
+        posted.raise_for_status()
+        tx_id = handshake_tx_id(posted.json(), local_id)
+        if tx_id != local_id:
+            print(f"using response transaction_id {tx_id} (request had {local_id})")
+        print(f"receipt {posted.json()}")
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"handshake unclear ({exc}); confirming host with request id {local_id}")
+        tx_id = local_id
+
+    first = confirm(URL, tx_id)
+    if first["unknown"] or first["escrow_state"] not in ("held",) + TERMINAL:
+        print(f"unknown: no fresh escrow for {tx_id} (http={first.get('http')} state={first.get('escrow_state')})")
+        print(FEEDBACK)
+        raise SystemExit("handshake not confirmed on host")
+    print(f"held {tx_id} escrow={first['escrow_state']} conserved={first['conserved']}")
 
     deadline = time.time() + 90
+    last = first
     while time.time() < deadline:
-        st = httpx.get(f"{URL}/transaction/{tx_id}", timeout=20).json()
-        state = (st.get("escrow") or {}).get("state")
-        print(f"escrow={state}")
-        if state in ("released_to_seller", "refunded_to_buyer"):
-            print(json.dumps(st, indent=2))
+        last = confirm(URL, tx_id)
+        print(f"escrow={last.get('escrow_state')} conserved={last.get('conserved')} settled={last.get('settled')}")
+        if last["settled"]:
+            print(json.dumps({"transaction": last.get("transaction"), "conservation": last.get("conservation")}, indent=2))
             print(FEEDBACK)
             return
         time.sleep(2)
+    print(f"unconfirmed {tx_id} last_state={last.get('escrow_state')} conserved={last.get('conserved')}")
     print(FEEDBACK)
-    raise SystemExit("timed out waiting for settlement")
+    raise SystemExit("timed out waiting for confirmed settlement")
 
 
 if __name__ == "__main__":
