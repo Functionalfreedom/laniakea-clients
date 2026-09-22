@@ -137,7 +137,7 @@ def main() -> None:
         raise SystemExit("handshake not confirmed on host")
     print(f"held {tx_id} escrow={first['escrow_state']} conserved={first['conserved']}")
 
-    deadline = time.time() + 90
+    deadline = time.time() + 200
     last = first
     while time.time() < deadline:
         last = confirm(URL, tx_id)

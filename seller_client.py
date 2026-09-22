@@ -106,7 +106,7 @@ def main() -> None:
             except httpx.HTTPError as exc:
                 print(f"result POST {tx} unclear ({exc}); confirming host state")
             last = None
-            for _ in range(40):
+            for _ in range(80):
                 last = confirm(URL, tx)
                 if last["settled"]:
                     print(
@@ -114,7 +114,11 @@ def main() -> None:
                     )
                     print(FEEDBACK)
                     break
-                time.sleep(0.5)
+                if last.get("transaction"):
+                    rec = (last["transaction"].get("escrow") or {})
+                    if rec.get("delivered_at") and rec.get("state") == "held":
+                        print(f"in_review {tx} until {rec.get('review_deadline')}")
+                time.sleep(1.0)
             else:
                 print(f"unconfirmed {tx} escrow={None if not last else last.get('escrow_state')} conserved={None if not last else last.get('conserved')}")
                 print(FEEDBACK)
