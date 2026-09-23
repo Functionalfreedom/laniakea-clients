@@ -75,9 +75,9 @@ def main() -> None:
     }
     r = httpx.post(f"{URL}/agents/register", json={**body, "signature": sign(body)}, timeout=20)
     r.raise_for_status()
-    faucet = {"agent_id": AGENT_ID, "amount": 25.0}
+    faucet = {"agent_id": AGENT_ID, "amount": 25.0, "signed_at": time.time()}
     httpx.post(f"{URL}/faucet", json={**faucet, "signature": sign(faucet)}, timeout=20).raise_for_status()
-    stake = {"agent_id": AGENT_ID, "amount": 10.0}
+    stake = {"agent_id": AGENT_ID, "amount": 10.0, "signed_at": time.time()}
     httpx.post(f"{URL}/stake", json={**stake, "signature": sign(stake)}, timeout=20).raise_for_status()
     print("listed. polling /jobs …")
     while True:
@@ -90,6 +90,7 @@ def main() -> None:
                 "seller_agent_id": AGENT_ID,
                 "status": "success",
                 "output_data": output,
+                "signed_at": time.time(),
             }
             try:
                 resp = httpx.post(
@@ -98,6 +99,7 @@ def main() -> None:
                         "seller_agent_id": AGENT_ID,
                         "status": "success",
                         "output_data": output,
+                        "signed_at": result_body["signed_at"],
                         "signature": sign(result_body),
                     },
                     timeout=20,

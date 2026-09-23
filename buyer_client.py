@@ -60,10 +60,11 @@ def confirm(url: str, tx_id: str, *, timeout: float = 20) -> dict:
     }
 
 
-def buyer_action_body(action: str, tx_id: str, buyer_id: str, reason: str = "") -> dict:
+def buyer_action_body(action: str, tx_id: str, buyer_id: str, reason: str = "", signed_at: float | None = None) -> dict:
     """Bytes the buyer signs for /dispute, /jobs/{tx}/accept, /jobs/{tx}/reject.
 
-    `action` is part of the signature. An accept signature will not authorize reject.
+    `action` and `signed_at` are part of the signature. An accept signature will not
+    authorize reject. `signed_at` older than 120s is rejected.
     """
     if action not in ("dispute", "accept", "reject"):
         raise ValueError("action must be dispute, accept, or reject")
@@ -72,6 +73,7 @@ def buyer_action_body(action: str, tx_id: str, buyer_id: str, reason: str = "") 
         "transaction_id": tx_id,
         "buyer_agent_id": buyer_id,
         "reason": reason,
+        "signed_at": time.time() if signed_at is None else signed_at,
     }
 
 
@@ -102,7 +104,7 @@ def main() -> None:
     }
     r = httpx.post(f"{URL}/agents/register", json={**body, "signature": sign(body)}, timeout=20)
     r.raise_for_status()
-    faucet = {"agent_id": AGENT_ID, "amount": 25.0}
+    faucet = {"agent_id": AGENT_ID, "amount": 25.0, "signed_at": time.time()}
     httpx.post(f"{URL}/faucet", json={**faucet, "signature": sign(faucet)}, timeout=20).raise_for_status()
 
     offers = httpx.get(f"{URL}/discover/tasks/{TASK}", timeout=20).json()
