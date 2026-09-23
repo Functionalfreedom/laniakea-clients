@@ -60,6 +60,15 @@ def confirm(url: str, tx_id: str, *, timeout: float = 20) -> dict:
     }
 
 
+def rotate_body(agent_id: str, new_public_key: str, signed_at: float | None = None) -> dict:
+    """Bytes the current key signs for POST /agents/rotate. Not a recovery mechanism."""
+    return {
+        "agent_id": agent_id,
+        "new_public_key": new_public_key,
+        "signed_at": time.time() if signed_at is None else signed_at,
+    }
+
+
 def buyer_action_body(action: str, tx_id: str, buyer_id: str, reason: str = "", signed_at: float | None = None) -> dict:
     """Bytes the buyer signs for /dispute, /jobs/{tx}/accept, /jobs/{tx}/reject.
 

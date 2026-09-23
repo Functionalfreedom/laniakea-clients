@@ -23,6 +23,15 @@ FEEDBACK = "Trouble or feedback? https://forms.gle/LBGb4jvgH88aK2Qf7"
 TERMINAL = ("released_to_seller", "refunded_to_buyer")
 
 
+def rotate_body(agent_id: str, new_public_key: str, signed_at: float | None = None) -> dict:
+    """Bytes the current key signs for POST /agents/rotate. Not a recovery mechanism."""
+    return {
+        "agent_id": agent_id,
+        "new_public_key": new_public_key,
+        "signed_at": time.time() if signed_at is None else signed_at,
+    }
+
+
 def canonical(payload: dict) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
