@@ -60,6 +60,21 @@ def confirm(url: str, tx_id: str, *, timeout: float = 20) -> dict:
     }
 
 
+def buyer_action_body(action: str, tx_id: str, buyer_id: str, reason: str = "") -> dict:
+    """Bytes the buyer signs for /dispute, /jobs/{tx}/accept, /jobs/{tx}/reject.
+
+    `action` is part of the signature. An accept signature will not authorize reject.
+    """
+    if action not in ("dispute", "accept", "reject"):
+        raise ValueError("action must be dispute, accept, or reject")
+    return {
+        "action": action,
+        "transaction_id": tx_id,
+        "buyer_agent_id": buyer_id,
+        "reason": reason,
+    }
+
+
 def handshake_tx_id(response_json: dict, local_id: str) -> str:
     """Authoritative id is the 200 body. Local request id is a hint only."""
     remote = (response_json or {}).get("transaction_id")
